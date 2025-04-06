@@ -227,6 +227,27 @@ def create_word_document(data):
     fine_table.style = 'Table Grid'
     fine_table.autofit = False
     
+    # กำหนดให้แสดงเฉพาะเส้นขอบด้านนอก ไม่แสดงเส้นภายใน
+    for i, row in enumerate(fine_table.rows):
+        for j, cell in enumerate(row.cells):
+            tcPr = cell._element.get_or_add_tcPr()
+            tcBorders = parse_xml(f'''
+            <w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:top w:val="{'single' if i == 0 else 'nil'}"/>
+                <w:left w:val="{'single' if j == 0 else 'nil'}"/>
+                <w:bottom w:val="{'single' if i == len(fine_table.rows)-1 else 'nil'}"/>
+                <w:right w:val="{'single' if j == len(row.cells)-1 else 'nil'}"/>
+            </w:tcBorders>
+            ''')
+            
+            # ลบ border เดิมถ้ามี
+            existing_tcBorders = tcPr.xpath('./w:tcBorders')
+            for border in existing_tcBorders:
+                tcPr.remove(border)
+            
+            # เพิ่ม border ใหม่
+            tcPr.append(tcBorders)
+    
     # Add the box title
     fine_box_cell = fine_table.cell(0, 0)
     fine_box_cell.merge(fine_table.cell(0, 1))
