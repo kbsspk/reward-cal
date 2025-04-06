@@ -190,63 +190,34 @@ def create_word_document(data):
         offense_text = f"ข้อกฎหมายความผิด    ................................................ มีบทกำหนดโทษตามมาตรา {data['section']}"
     offense_para.add_run(offense_text)
     
-    # Add a 2-column layout table with 1 row
-    main_layout = doc.add_table(rows=1, cols=2)
-    main_layout.style = 'Table Grid'
-    main_layout.autofit = False
-    
-    # Remove borders from layout table
-    for cell in main_layout.rows[0].cells:
-        cell._element.get_or_add_tcPr().append(
-            parse_xml(f'''
-            <w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-                <w:top w:val="nil"/>
-                <w:left w:val="nil"/>
-                <w:bottom w:val="nil"/>
-                <w:right w:val="nil"/>
-            </w:tcBorders>
-            ''')
-        )
-    
-    # Set width of columns
-    main_layout._element.tblPr.xpath('./w:tblW')[0].set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}w', '5000')
-    main_layout._element.tblPr.xpath('./w:tblW')[0].set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}type', 'pct')
-    
-    grid = main_layout._element.xpath('./w:tblGrid')[0]
-    grid_cols = grid.xpath('./w:gridCol')
-    if len(grid_cols) >= 2:
-        grid_cols[0].set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}w', str(3500))  # Left column 70%
-        grid_cols[1].set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}w', str(1500))  # Right column 30%
-    
-    # Get cells
-    left_cell = main_layout.cell(0, 0)
-    right_cell = main_layout.cell(0, 1)
-    
-    # Add table to left cell
-    fine_table = left_cell.add_table(rows=8, cols=2)
+    # Create a table for the fine calculation (2 columns, 8 rows)
+    fine_table = doc.add_table(rows=8, cols=2)
     fine_table.style = 'Table Grid'
     fine_table.autofit = False
     
-    # กำหนดให้แสดงเฉพาะเส้นขอบด้านนอก ไม่แสดงเส้นภายใน
-    for i, row in enumerate(fine_table.rows):
-        for j, cell in enumerate(row.cells):
-            tcPr = cell._element.get_or_add_tcPr()
-            tcBorders = parse_xml(f'''
-            <w:tcBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-                <w:top w:val="{'single' if i == 0 else 'nil'}"/>
-                <w:left w:val="{'single' if j == 0 else 'nil'}"/>
-                <w:bottom w:val="{'single' if i == len(fine_table.rows)-1 else 'nil'}"/>
-                <w:right w:val="{'single' if j == len(row.cells)-1 else 'nil'}"/>
-            </w:tcBorders>
-            ''')
-            
-            # ลบ border เดิมถ้ามี
-            existing_tcBorders = tcPr.xpath('./w:tcBorders')
-            for border in existing_tcBorders:
-                tcPr.remove(border)
-            
-            # เพิ่ม border ใหม่
-            tcPr.append(tcBorders)
+    # กำหนดความกว้างตาราง 50% ของหน้า
+    fine_table._element.tblPr.xpath('./w:tblW')[0].set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}w', '2500')
+    fine_table._element.tblPr.xpath('./w:tblW')[0].set('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}type', 'pct')
+    
+    # ลบเส้นตารางภายในและใส่เฉพาะเส้นกรอบภายนอก
+    tblBorders = parse_xml("""
+    <w:tblBorders xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+      <w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/>
+      <w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/>
+      <w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/>
+      <w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/>
+      <w:insideH w:val="nil"/>
+      <w:insideV w:val="nil"/>
+    </w:tblBorders>
+    """)
+    
+    # ดึง tblPr element
+    tblPr = fine_table._element.xpath('./w:tblPr')[0]
+    # ลบ tblBorders เดิมถ้ามี
+    for element in tblPr.xpath('./w:tblBorders'):
+        tblPr.remove(element)
+    # เพิ่ม tblBorders ใหม่
+    tblPr.append(tblBorders)
     
     # Add the box title
     fine_box_cell = fine_table.cell(0, 0)
@@ -292,11 +263,12 @@ def create_word_document(data):
                     run.font.name = 'TH SarabunPSK'
                 paragraph.alignment = 1  # Center align
     
-    # Add signature to right cell
-    sig_para = right_cell.add_paragraph()
-    sig_para.alignment = 2  # Right alignment
-    sig_para.add_run("ผู้รับชำระ.........................................\n")
-    sig_para.add_run("โทร ................................................")
+    # Add signature section
+    doc.add_paragraph()
+    sig_section = doc.add_paragraph()
+    sig_section.alignment = 2  # Right alignment
+    sig_section.add_run("ผู้รับชำระ.........................................\n")
+    sig_section.add_run("โทร ................................................")
     
     # Save to BytesIO object
     buffer = BytesIO()
