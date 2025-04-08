@@ -70,8 +70,6 @@ def load_max_fine_data():
             
             # ถ้าไม่มีคอลัมน์ที่ต้องการ โปรแกรมอาจอ่านไฟล์ได้แต่ encoding ไม่ถูกต้อง
             if not all(col in df.columns for col in required_columns):
-                # แสดงคอลัมน์ที่ได้เพื่อการดีบัก
-                # st.warning(f"พบคอลัมน์: {df.columns.tolist()} (encoding: {encoding}) - ไม่ตรงกับที่ต้องการ")
                 continue
                 
             # แปลงคอลัมน์ 'จำนวนเงินส่วนแบ่งสูงสุด' เป็นตัวเลข
@@ -81,34 +79,34 @@ def load_max_fine_data():
             if "ความผิด" not in df.columns:
                 df["ความผิด"] = ""
                 
-            # ไม่แปลงคอลัมน์ 'มาตรา' เป็นตัวเลขเพราะมีรูปแบบที่หลากหลาย
-            # เช่น "มาตรา 16", "มาตรา 20 วรรคสอง" เป็นต้น
+            # เพิ่มคอลัมน์ "มีจำนวนเงินส่วนแบ่งสูงสุด" เพื่อระบุว่ากฎหมายนี้มีจำนวนเงินส่วนแบ่งสูงสุดหรือไม่
+            df['มีจำนวนเงินส่วนแบ่งสูงสุด'] = df['จำนวนเงินส่วนแบ่งสูงสุด'].notna()
                 
-            # ตรวจสอบว่ามีค่า NaN หรือไม่ในคอลัมน์จำนวนเงิน
-            if df['จำนวนเงินส่วนแบ่งสูงสุด'].isna().any():
-                # st.warning(f"พบค่า NaN ในคอลัมน์จำนวนเงินส่วนแบ่งสูงสุด (encoding: {encoding}) - อาจมีการแปลงค่าไม่สำเร็จ")
-                pass
-            
-            # หากอ่านไฟล์ได้และมีคอลัมน์ครบถ้วน
             return df
             
         except UnicodeDecodeError:
             continue
         except Exception as e:
-            # st.error(f"เกิดข้อผิดพลาดในการอ่านไฟล์: {e} (encoding: {encoding})")
             pass
     
-    # ถ้าลองทุก encoding แล้วไม่สำเร็จ
     st.error("ไม่สามารถอ่านไฟล์ข้อมูลได้ กรุณาตรวจสอบรูปแบบไฟล์และ encoding")
+    return pd.DataFrame(columns=["พ.ร.บ.", "มาตรา", "จำนวนเงินส่วนแบ่งสูงสุด", "ความผิด", "มีจำนวนเงินส่วนแบ่งสูงสุด"])
+
+def has_max_share_limit(law_name, section, df):
+    """
+    ตรวจสอบว่ากฎหมายและมาตราที่ระบุมีจำนวนเงินส่วนแบ่งสูงสุดหรือไม่
+    """
+    # ค้นหากฎหมายและมาตราที่ตรงกัน
+    matching_rows = df[(df['พ.ร.บ.'] == law_name) & (df['มาตรา'] == section)]
     
-    # สร้างข้อมูลตัวอย่างเพื่อให้แอปทำงานต่อได้
-    # st.info("กำลังใช้ข้อมูลตัวอย่างแทน...")
-    sample_data = {
-        "พ.ร.บ.": ["จราจรทางบก", "จราจรทางบก", "รถยนต์"],
-        "มาตรา": ["มาตรา 5", "มาตรา 7", "มาตรา 56"],
-        "จำนวนเงินส่วนแบ่งสูงสุด": [2000, 3000, 4000]
-    }
-    return pd.DataFrame(sample_data)
+    if matching_rows.empty:
+        return False, None
+    
+    # ตรวจสอบว่ามีจำนวนเงินส่วนแบ่งสูงสุดหรือไม่
+    has_limit = matching_rows['มีจำนวนเงินส่วนแบ่งสูงสุด'].iloc[0]
+    max_share = matching_rows['จำนวนเงินส่วนแบ่งสูงสุด'].iloc[0] if has_limit else None
+    
+    return has_limit, max_share
 
 # Function to create and download Word document
 def create_word_document(data):
@@ -170,7 +168,6 @@ def create_word_document(data):
     receipt_from_para.add_run("โปรดรับเงินจาก.............................................................................")
     receipt_from_para.alignment = 0  # Left alignment
 
-
     
     # Add fine amount
     amount_para = doc.add_paragraph()
@@ -187,7 +184,7 @@ def create_word_document(data):
     if "offense" in data and data["offense"]:
         offense_text = f"ข้อกฎหมายความผิด    {data['offense']} มีบทกำหนดโทษตาม {data['section']}"
     else:
-        offense_text = f"ข้อกฎหมายความผิด    ................................................ มีบทกำหนดโทษตามมาตรา {data['section']}"
+        offense_text = f"ข้อกฎหมายความผิด    .......................................................................................................................................................................................................................................... มีบทกำหนดโทษตามมาตรา {data['section']}"
     offense_para.add_run(offense_text)
     
     # Create a table for the fine calculation (2 columns, 8 rows)
@@ -231,10 +228,13 @@ def create_word_document(data):
     fine_table.cell(1, 1).text = f"{data['calculated_share']:,.2f} บาท"
     
     fine_table.cell(2, 0).text = "สูงสุดไม่เกิน"
-    fine_table.cell(2, 1).text = f"{data['max_share']:,.2f} บาท"
+    if data['max_share'] == float('inf'):
+        fine_table.cell(2, 1).text = "ไม่มีกำหนด"
+    else:
+        fine_table.cell(2, 1).text = f"{data['max_share']:,.2f} บาท"
     
     fine_table.cell(3, 0).text = "เงินสินบนนำจับ"
-    fine_table.cell(3, 1).text = f"{data['share1']:,.2f} บาท(15 %*)"
+    fine_table.cell(3, 1).text = f"{data['share1']:,.2f} บาท(25 %*)"
     
     # Add checkboxes in a single cell spanning 2 columns
     check_cell = fine_table.cell(4, 0)
@@ -249,10 +249,10 @@ def create_word_document(data):
     
     # Add reward and expense rows
     fine_table.cell(6, 0).text = "รางวัล"
-    fine_table.cell(6, 1).text = f"{data['share2']:,.2f} บาท(30 %*)"
+    fine_table.cell(6, 1).text = f"{data['share2']:,.2f} บาท(50 %*)"
     
     fine_table.cell(7, 0).text = "คชจ."
-    fine_table.cell(7, 1).text = f"{data['share3']:,.2f} บาท(15 %*)"
+    fine_table.cell(7, 1).text = f"{data['share3']:,.2f} บาท(25 %*)"
     
     # Set font for all cells
     for row in fine_table.rows:
@@ -359,12 +359,12 @@ def get_download_link(buffer, filename="รายงานการคำนว�
 def main():
     st.title("💰 ระบบคำนวณส่วนแบ่งเงินรางวัลนำจับ")
     
-    # Load max fine share data
-    max_fine_data = load_max_fine_data()
+    # Load max fine data
+    df = load_max_fine_data()
     
     # Get unique laws from the data
-    laws = ["กรุณาเลือก..."] + max_fine_data["พ.ร.บ."].unique().tolist()
-
+    laws = ["กรุณาเลือก..."] + df["พ.ร.บ."].unique().tolist()
+    
     with st.container():
         st.markdown('<div class="info-box">', unsafe_allow_html=True)
         st.subheader("📝 กรอกข้อมูลเพื่อคำนวณส่วนแบ่ง")
@@ -378,10 +378,11 @@ def main():
         # Filter sections based on selected law
         if selected_law == "กรุณาเลือก...":
             sections = ["กรุณาเลือก..."]
-            filtered_sections = pd.DataFrame(columns=max_fine_data.columns)
+            filtered_sections = pd.DataFrame(columns=df.columns)
         else:
-            filtered_sections = max_fine_data[max_fine_data["พ.ร.บ."] == selected_law]
-            sections = ["กรุณาเลือก..."] + filtered_sections["มาตรา"].tolist()
+            filtered_sections = df[df["พ.ร.บ."] == selected_law]
+            # Replace NaN values with "ไม่ระบุ" for sections
+            sections = ["กรุณาเลือก..."] + [section if pd.notna(section) else "ไม่ระบุ" for section in filtered_sections["มาตรา"].tolist()]
         
         # Select section
         selected_section = st.selectbox("เลือกบทกำหนดโทษ", sections)
@@ -389,7 +390,9 @@ def main():
         # Get offense information if available
         offense_info = ""
         if selected_section != "กรุณาเลือก..." and selected_law != "กรุณาเลือก...":
-            selected_row = filtered_sections[filtered_sections["มาตรา"] == selected_section]
+            # Handle the case where section is "ไม่ระบุ"
+            section_to_match = None if selected_section == "ไม่ระบุ" else selected_section
+            selected_row = filtered_sections[filtered_sections["มาตรา"] == section_to_match]
             if not selected_row.empty and "ความผิด" in selected_row.columns:
                 offense_info = selected_row["ความผิด"].values[0]
                 if pd.notna(offense_info) and offense_info:
@@ -410,15 +413,21 @@ def main():
                 calculated_share = fine_amount * 0.6
                 
                 # Get maximum share for selected law and section
-                max_share_row = filtered_sections[filtered_sections["มาตรา"] == selected_section]
-                if max_share_row.empty or pd.isna(max_share_row["จำนวนเงินส่วนแบ่งสูงสุด"].values[0]):
-                    st.error(f"ไม่พบข้อมูลหรือมีค่าเป็น NaN สำหรับ พ.ร.บ. {selected_law} บทกำหนดโทษ {selected_section}")
-                    max_share = 0  # กำหนดค่าเริ่มต้นเป็น 0
-                else:
-                    max_share = max_share_row["จำนวนเงินส่วนแบ่งสูงสุด"].values[0]
+                # Handle the case where section is "ไม่ระบุ"
+                section_to_match = None if selected_section == "ไม่ระบุ" else selected_section
+                max_share_row = filtered_sections[filtered_sections["มาตรา"] == section_to_match]
                 
-                # Determine actual share amount
-                actual_share = min(calculated_share, float(max_share))
+                # Check if the law has a maximum share limit
+                has_limit, max_share = has_max_share_limit(selected_law, section_to_match, df)
+                
+                if not has_limit:
+                    # If no maximum share limit, use the calculated share directly
+                    actual_share = calculated_share
+                    max_share_display = "ไม่มีกำหนด"
+                else:
+                    # Use the minimum between calculated share and maximum share
+                    actual_share = min(calculated_share, max_share)
+                    max_share_display = f"{max_share:,.2f} บาท"
                 
                 # Calculate distribution
                 share1 = actual_share * 0.25  # 25% - เงินสินบนนำจับ
@@ -433,7 +442,7 @@ def main():
                 with col1:
                     st.write(f"จำนวนเงินค่าปรับ: **{fine_amount:,.2f}** บาท")
                     st.write(f"ส่วนแบ่งที่คำนวณได้ (60%): **{calculated_share:,.2f}** บาท")
-                    st.write(f"จำนวนเงินส่วนแบ่งสูงสุดตามบทกำหนดโทษ: **{max_share:,.2f}** บาท")
+                    st.write(f"จำนวนเงินส่วนแบ่งสูงสุดตามบทกำหนดโทษ: **{max_share_display}**")
                 
                 with col2:
                     st.write(f"จำนวนเงินส่วนแบ่งที่ใช้จริง: **{actual_share:,.2f}** บาท")
@@ -458,9 +467,9 @@ def main():
                 # Create Word document
                 data = {
                     "law": selected_law,
-                    "section": selected_section,
+                    "section": ".........................................................................................................." if selected_section == "ไม่ระบุ" else selected_section,
                     "fine_amount": fine_amount,
-                    "max_share": max_share,
+                    "max_share": max_share if has_limit else float('inf'),
                     "calculated_share": calculated_share,
                     "actual_share": actual_share,
                     "share1": share1,
@@ -474,9 +483,9 @@ def main():
                     if pd.notna(offense_text) and offense_text:
                         data["offense"] = offense_text
                     else:
-                        data["offense"] = ""
+                        data["offense"] = "................................................................................................................................................................................................................................"
                 else:
-                    data["offense"] = ""
+                    data["offense"] = "................................................................................................................"
                 
                 buffer = create_word_document(data)
                 
