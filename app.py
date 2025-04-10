@@ -96,6 +96,10 @@ def has_max_share_limit(law_name, section, df):
     """
     ตรวจสอบว่ากฎหมายและมาตราที่ระบุมีจำนวนเงินส่วนแบ่งสูงสุดหรือไม่
     """
+    # ถ้าเป็น "มาตรา อื่นๆ" หรือ "ไม่ระบุ" หรือ None ให้ถือว่าไม่มีจำนวนเงินส่วนแบ่งสูงสุด
+    if section in ["มาตรา อื่นๆ", "ไม่ระบุ", None]:
+        return False, None
+    
     # ค้นหากฎหมายและมาตราที่ตรงกัน
     matching_rows = df[(df['พ.ร.บ.'] == law_name) & (df['มาตรา'] == section)]
     
@@ -236,16 +240,27 @@ def create_word_document(data):
     fine_table.cell(3, 0).text = "เงินสินบนนำจับ"
     fine_table.cell(3, 1).text = f"{data['share1']:,.2f} บาท(25 %*)"
     
-    # Add checkboxes in a single cell spanning 2 columns
+    # Add checkboxes based on bounty claimant status and law type
     check_cell = fine_table.cell(4, 0)
     check_cell.merge(fine_table.cell(4, 1))
     check_para = check_cell.paragraphs[0]
-    check_para.add_run("□ จ่าย")
+    
+    if data.get('has_bounty_claimant', False):
+        check_para.add_run("☑ จ่ายให้ผู้ขอรับสินบนนำจับ")
+    else:
+        check_para.add_run("□ จ่ายให้ผู้ขอรับสินบนนำจับ")
     
     check_cell2 = fine_table.cell(5, 0)
     check_cell2.merge(fine_table.cell(5, 1))
     check_para2 = check_cell2.paragraphs[0]
-    check_para2.add_run("□ เป็นรายได้แผ่นดิน")
+    
+    if not data.get('has_bounty_claimant', False):
+        if data['law'] in ['เครื่องสำอาง', 'เครื่องมือแพทย์']:
+            check_para2.add_run("☑ เป็นรายได้แผ่นดิน")
+        else:
+            check_para2.add_run("☑ รวมกับสินบนรางวัล")
+    else:
+        check_para2.add_run("□ เป็นรายได้แผ่นดิน")
     
     # Add reward and expense rows
     fine_table.cell(6, 0).text = "รางวัล"
@@ -387,11 +402,14 @@ def main():
         # Select section
         selected_section = st.selectbox("เลือกบทกำหนดโทษ", sections)
         
+        # Add checkbox for bounty claimant
+        has_bounty_claimant = st.checkbox("มีผู้ขอรับสินบนนำจับ")
+        
         # Get offense information if available
         offense_info = ""
         if selected_section != "กรุณาเลือก..." and selected_law != "กรุณาเลือก...":
-            # Handle the case where section is "ไม่ระบุ"
-            section_to_match = None if selected_section == "ไม่ระบุ" else selected_section
+            # Handle the case where section is "ไม่ระบุ" or "มาตรา อื่นๆ"
+            section_to_match = None if selected_section in ["ไม่ระบุ", "มาตรา อื่นๆ"] else selected_section
             selected_row = filtered_sections[filtered_sections["มาตรา"] == section_to_match]
             if not selected_row.empty and "ความผิด" in selected_row.columns:
                 offense_info = selected_row["ความผิด"].values[0]
@@ -413,8 +431,8 @@ def main():
                 calculated_share = fine_amount * 0.6
                 
                 # Get maximum share for selected law and section
-                # Handle the case where section is "ไม่ระบุ"
-                section_to_match = None if selected_section == "ไม่ระบุ" else selected_section
+                # Handle the case where section is "ไม่ระบุ" or "มาตรา อื่นๆ"
+                section_to_match = None if selected_section in ["ไม่ระบุ", "มาตรา อื่นๆ"] else selected_section
                 max_share_row = filtered_sections[filtered_sections["มาตรา"] == section_to_match]
                 
                 # Check if the law has a maximum share limit
@@ -467,14 +485,15 @@ def main():
                 # Create Word document
                 data = {
                     "law": selected_law,
-                    "section": ".........................................................................................................." if selected_section == "ไม่ระบุ" else selected_section,
+                    "section": "..............................................................................................." if selected_section in ["ไม่ระบุ", "มาตรา อื่นๆ"] else selected_section,
                     "fine_amount": fine_amount,
                     "max_share": max_share if has_limit else float('inf'),
                     "calculated_share": calculated_share,
                     "actual_share": actual_share,
                     "share1": share1,
                     "share2": share2,
-                    "share3": share3
+                    "share3": share3,
+                    "has_bounty_claimant": has_bounty_claimant
                 }
                 
                 # เพิ่มข้อมูลความผิด (ถ้ามี)
@@ -483,9 +502,9 @@ def main():
                     if pd.notna(offense_text) and offense_text:
                         data["offense"] = offense_text
                     else:
-                        data["offense"] = "................................................................................................................................................................................................................................"
+                        data["offense"] = "..............................................................................................."
                 else:
-                    data["offense"] = "................................................................................................................"
+                    data["offense"] = "..............................................................................................."
                 
                 buffer = create_word_document(data)
                 
