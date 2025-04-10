@@ -255,7 +255,8 @@ def create_word_document(data):
     check_para2 = check_cell2.paragraphs[0]
     
     if not data.get('has_bounty_claimant', False):
-        if data['law'] in ['เครื่องสำอาง', 'เครื่องมือแพทย์']:
+        # For Cosmetic Act and Medical Device Act, always check "เป็นรายได้แผ่นดิน"
+        if data['law'] in ['เครื่องสำอาง พ.ศ. 2558', 'เครื่องมือแพทย์ พ.ศ. 2551']:
             check_para2.add_run("☑ เป็นรายได้แผ่นดิน")
         else:
             check_para2.add_run("☑ รวมกับสินบนรางวัล")
